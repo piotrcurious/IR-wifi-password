@@ -35,13 +35,28 @@ Each Hamming nibble is wrapped in a 14-bit RC5 word with bit 13 set to 1 to ensu
 4. Open Serial Monitor at 115200 baud.
 5. Bring the transmitter close to the receiver.
 
+## Symmetric Encryption with SD Key Cards
+For high-security requirements, the project supports using SD cards as "key cards" containing raw random data (One-Time Pad style).
+
+- **Raw Block Access**: Keys are read directly from SD card blocks without a filesystem.
+- **Symmetric XOR Cipher**: Credentials and key evolution data are encrypted with a 512-byte key from the SD card.
+- **Key Evolution (Poly Expansion)**: After each successful transmission, the used key block is replaced with a new one generated from a "compact crypto poly expansion" (8 GF(2^8) polynomial coefficients) sent with the message. This extends the system's life and makes it extremely difficult for an attacker to maintain decryption capability if they miss even a single update.
+- **Out-of-Sync Protection**: The system relies on synchronized block indices (stored in EEPROM).
+
+### Using SD Key Cards
+1. Generate an initial key card image: `python3 generate_key_card.py --size 1`
+2. Write `keycard.img` to two identical SD cards using `dd` or similar.
+3. Use `ir_wifi_blaster_sd.ino` and `ir_wifi_receiver_sd.ino`.
+4. Connect an SD card module to your Arduino/ESP (CS on pin 4 for Arduino, 15 for ESP8266, 5 for ESP32).
+
 ## Files
-- `ir_wifi_blaster.ino`: Transmitter sketch.
-- `ir_wifi_receiver.ino`: Receiver sketch.
-- `hamming.h`: Shared Hamming(7,4) tables and helper functions.
-- `hamming_generator.py`: Python script used to generate the Hamming tables.
+- `ir_wifi_blaster.ino` / `ir_wifi_receiver.ino`: Basic version with Hamming ECC and CRC.
+- `ir_wifi_blaster_sd.ino` / `ir_wifi_receiver_sd.ino`: High-security SD-based version.
+- `crypto.h`: GF(2^8) math and polynomial expansion logic.
+- `hamming.h`: Shared Hamming(7,4) tables.
+- `hamming_generator.py`: Script to generate Hamming tables.
+- `generate_key_card.py`: Script to generate initial random SD images.
 
 ## TODO
-- [ ] Add symmetric encryption (e.g., Speck or XOR with a shared key).
-- [ ] Implement a rolling code or timestamp to prevent replay attacks.
+- [ ] Implement a rolling code or timestamp for the basic version.
 - [ ] Create a simple mobile app or web interface for the blaster.

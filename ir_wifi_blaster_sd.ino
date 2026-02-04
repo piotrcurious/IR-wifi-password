@@ -6,7 +6,7 @@
 #include "crypto.h"
 
 #if defined(ESP8266) || defined(ESP32)
-#define EEPROM_SIZE 4
+#define EEPROM_SIZE 16
 #endif
 
 // Pin configuration
@@ -16,12 +16,15 @@ const int SD_CS_PIN = 4;
 // Protocol constants
 const uint16_t PREAMBLE_CODE = 0x3FFF;
 const int PREAMBLE_COUNT = 3;
-const int SEND_DELAY = 50;
+const int SEND_DELAY = 45;
 const int POLY_COEFFS_COUNT = 8;
-const int EEPROM_ADDR = 0;
+const int EEPROM_ADDR_BLOCK = 0;
+const int EEPROM_ADDR_ROLLING = 4;
 
 Sd2Card card;
-uint32_t currentBlock = 0;
+SDHeader header;
+uint32_t currentBlock = 1; // Start from block 1, block 0 is header
+uint32_t rollingCode = 0;
 uint8_t keyBlock[512];
 uint8_t dataBuffer[128];
 
@@ -49,76 +52,101 @@ void setup() {
 #endif
 
     if (!card.init(SPI_HALF_SPEED, SD_CS_PIN)) {
-        Serial.println("SD init failed! Please check SD card and CS pin.");
+        Serial.println("SD init failed!");
         while(1);
     }
 
-    EEPROM.get(EEPROM_ADDR, currentBlock);
-    if (currentBlock == 0xFFFFFFFF) currentBlock = 0;
+    // Read header from Block 0
+    if (!card.readBlock(0, (uint8_t*)&header)) {
+        Serial.println("Failed to read header!");
+        while(1);
+    }
 
-    Serial.print("IR WiFi SD Blaster Ready. Current Block: ");
+    if (strncmp(header.magic, "IRWIFI01", 8) != 0) {
+        Serial.println("Invalid SD header magic!");
+        while(1);
+    }
+
+    EEPROM.get(EEPROM_ADDR_BLOCK, currentBlock);
+    if (currentBlock == 0xFFFFFFFF || currentBlock == 0) currentBlock = 1;
+
+    EEPROM.get(EEPROM_ADDR_ROLLING, rollingCode);
+    if (rollingCode == 0xFFFFFFFF) rollingCode = 0;
+
+    Serial.print("SD Blaster Ready. Total Blocks: ");
+    Serial.print(header.totalBlocks);
+    Serial.print(" Current Block: ");
     Serial.println(currentBlock);
 }
 
 void loop() {
-    Serial.println("Reading key block from SD...");
+    if (currentBlock >= header.totalBlocks) {
+        Serial.println("Reached end of codebook!");
+        delay(10000);
+        return;
+    }
+
     if (!card.readBlock(currentBlock, keyBlock)) {
         Serial.println("Read failed!");
         delay(5000);
         return;
     }
 
+    rollingCode++;
+    EEPROM.put(EEPROM_ADDR_ROLLING, rollingCode);
+#if defined(ESP8266) || defined(ESP32)
+    EEPROM.commit();
+#endif
+
+    // 1. Prepare and encrypt SyncInfo
+    SyncInfo sync;
+    sync.blockIndex = currentBlock;
+    sync.rollingCode = rollingCode;
+    sync.crc = crc8((uint8_t*)&sync, 8);
+
+    uint8_t encryptedSync[sizeof(SyncInfo)];
+    memcpy(encryptedSync, &sync, sizeof(SyncInfo));
+    xor_cipher(encryptedSync, sizeof(SyncInfo), header.masterKey);
+
+    // 2. Prepare Data Packet
     uint8_t ssidLen = strlen(ssid);
     uint8_t passLen = strlen(password);
-
-    // Prepare data packet
     dataBuffer[0] = ssidLen;
     dataBuffer[1] = passLen;
     memcpy(dataBuffer + 2, ssid, ssidLen);
     memcpy(dataBuffer + 2 + ssidLen, password, passLen);
 
-    // Generate random new poly coefficients for key regeneration
     uint8_t newCoeffs[POLY_COEFFS_COUNT];
-    for (int i = 0; i < POLY_COEFFS_COUNT; i++) {
-        newCoeffs[i] = (uint8_t)random(256);
-    }
+    for (int i = 0; i < POLY_COEFFS_COUNT; i++) newCoeffs[i] = (uint8_t)random(256);
     memcpy(dataBuffer + 2 + ssidLen + passLen, newCoeffs, POLY_COEFFS_COUNT);
 
-    // Calculate CRC of the data (before encryption)
     uint8_t totalDataLen = 2 + ssidLen + passLen + POLY_COEFFS_COUNT;
     uint8_t crc = crc8(dataBuffer, totalDataLen);
     dataBuffer[totalDataLen] = crc;
     totalDataLen++;
 
-    // Encrypt everything with the key block
+    // Encrypt data with the key block
     xor_cipher(dataBuffer, totalDataLen, keyBlock);
 
-    Serial.println("Blasting encrypted credentials...");
-    for (int i = 0; i < PREAMBLE_COUNT; i++) {
-        sendRC5Word(PREAMBLE_CODE);
-    }
+    Serial.println("Blasting...");
+    for (int i = 0; i < PREAMBLE_COUNT; i++) sendRC5Word(PREAMBLE_CODE);
 
-    for (int i = 0; i < totalDataLen; i++) {
-        sendByte(dataBuffer[i]);
-    }
+    // Send encrypted SyncInfo
+    for (size_t i = 0; i < sizeof(SyncInfo); i++) sendByte(encryptedSync[i]);
 
-    // Regenerate key block for the current index and save back to SD
-    // This implements the "poly expansion" to extend the life of the system.
-    Serial.println("Updating SD block with new expanded key...");
+    // Send encrypted Data
+    for (int i = 0; i < totalDataLen; i++) sendByte(dataBuffer[i]);
+
+    // Key Evolution: update current block with new expansion
     expand_poly(newCoeffs, POLY_COEFFS_COUNT, keyBlock, 512);
-    if (!card.writeBlock(currentBlock, keyBlock)) {
-        Serial.println("Write failed!");
-    } else {
-        // Move to next block for next transmission
+    if (card.writeBlock(currentBlock, keyBlock)) {
         currentBlock++;
-        EEPROM.put(EEPROM_ADDR, currentBlock);
+        EEPROM.put(EEPROM_ADDR_BLOCK, currentBlock);
 #if defined(ESP8266) || defined(ESP32)
         EEPROM.commit();
 #endif
-        Serial.print("Success. Next block: ");
-        Serial.println(currentBlock);
     }
 
-    Serial.println("Waiting 10 seconds...");
+    Serial.println("Waiting 10s...");
     delay(10000);
 }

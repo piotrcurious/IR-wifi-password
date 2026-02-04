@@ -43,4 +43,17 @@ inline void xor_cipher(uint8_t *data, size_t data_len, const uint8_t *key) {
     }
 }
 
+struct SDHeader {
+    char magic[8];        // "IRWIFI01"
+    uint32_t totalBlocks;
+    uint8_t masterKey[32];
+    uint8_t reserved[468];
+};
+
+struct __attribute__((packed)) SyncInfo {
+    uint32_t blockIndex;
+    uint32_t rollingCode;
+    uint8_t crc;           // CRC8 of blockIndex and rollingCode
+};
+
 #endif

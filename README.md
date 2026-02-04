@@ -1,23 +1,47 @@
 # IR-wifi-password
-Sending wifi SSID/password over IR-serial protocol .
+Sending WiFi SSID/password over IR-serial protocol.
 
-This is sketch for sending wifi SSID/password over IR.
+This project allows "pairing" WiFi devices by putting them close together and exchanging credentials using Infrared.
 
-Idea is to "pair" wifi devices by putting them really close together so they can 
-exchange wifi ssid/password using infrared. 
+## Features
+- **Robust Transmission**: Uses Hamming(7,4) error correction for every nibble sent.
+- **Reliable Protocol**: Includes preamble, length headers, and CRC8 checksum to ensure data integrity.
+- **Multi-platform**: Supports Arduino (Atmel AVR), ESP8266, and ESP32.
+- **Secure-ish**: Close-proximity IR is naturally limited in range, providing a layer of physical security.
 
-so far no code but use cases :
-* "pairing" any two esp8266 , so no need to connect them to computer to update wifi stuff. 
-* "pairing" any other devices, like headphones. It is better than QR code because it does not require camera, just IR led. 
-etc.
+## Protocol Details
+The data is sent as a series of 14-bit RC5 words:
+1. **Preamble**: `0x3FFF` sent 3 times.
+2. **SSID Length**: 1 byte (encoded as 2 Hamming nibbles).
+3. **Password Length**: 1 byte (encoded as 2 Hamming nibbles).
+4. **SSID**: N bytes (each encoded as 2 Hamming nibbles).
+5. **Password**: M bytes (each encoded as 2 Hamming nibbles).
+6. **CRC8**: 1 byte (encoded as 2 Hamming nibbles).
 
-TODO: everything :D
-close-proximity IR is "secure" enough that it can blast in cleartext, f.e. using 1200bps serial over IR "protocol".
-this is sure shot for one-way advertising devices. 
-It really has much room for improvement, like rolling code, symmetric encryption (f.e. using same shared codebook)
-and much much more depending on use. f.e. unlike static printed qr code it allows generating different wifi password 
-for each client wishing to connect to wireless AP. 
+Each Hamming nibble is wrapped in a 14-bit RC5 word with bit 13 set to 1 to ensure a start bit:
+`Word = 0x2000 | Hamming74(nibble)`
 
-For me most usefull will be code merely allowing esp8266 to log into another esp8266 softAP without need to use 
-anything else than esp's themselves, so i can have portable wireless vt100 terminal which i can connect to anything in my lab 
-without need to type anything. 
+## Usage
+
+### Transmitter (Blaster)
+1. Open `ir_wifi_blaster.ino` in Arduino IDE.
+2. Set your `ssid` and `password` in the code.
+3. Upload to an Arduino (e.g., Uno, Nano) with an IR LED connected to pin 3.
+
+### Receiver
+1. Open `ir_wifi_receiver.ino` in Arduino IDE.
+2. Ensure you have the `IRremote` library (v4.x) installed.
+3. Upload to an ESP8266 or ESP32 with an IR receiver module (e.g., TSOP38238) connected to the specified pin (D5 on ESP8266, GPIO15 on ESP32 by default).
+4. Open Serial Monitor at 115200 baud.
+5. Bring the transmitter close to the receiver.
+
+## Files
+- `ir_wifi_blaster.ino`: Transmitter sketch.
+- `ir_wifi_receiver.ino`: Receiver sketch.
+- `hamming.h`: Shared Hamming(7,4) tables and helper functions.
+- `hamming_generator.py`: Python script used to generate the Hamming tables.
+
+## TODO
+- [ ] Add symmetric encryption (e.g., Speck or XOR with a shared key).
+- [ ] Implement a rolling code or timestamp to prevent replay attacks.
+- [ ] Create a simple mobile app or web interface for the blaster.

@@ -40,8 +40,10 @@ For high-security requirements, the project supports using SD cards as "key card
 
 - **Raw Block Access**: Keys are read directly from SD card blocks without a filesystem.
 - **Symmetric XOR Cipher**: Credentials and key evolution data are encrypted with a 512-byte key from the SD card.
-- **Key Evolution (Poly Expansion)**: After each successful transmission, the used key block is replaced with a new one generated from a "compact crypto poly expansion" (8 GF(2^8) polynomial coefficients) sent with the message. This extends the system's life and makes it extremely difficult for an attacker to maintain decryption capability if they miss even a single update.
-- **Out-of-Sync Protection**: The system relies on synchronized block indices (stored in EEPROM).
+- **Key Evolution (Poly Expansion)**: After each successful transmission, the used key block is replaced with a new one generated from a "compact crypto poly expansion" (8 GF(2^8) polynomial coefficients) sent with the message.
+- **Life Extension (Wrap-around)**: When the end of the SD codebook is reached, the system wraps around to Block 1. Because every block was evolved during its first use, the "second lap" uses entirely new keys derived from the polynomial expansions, effectively extending the system's life indefinitely.
+- **Faster Decline for Attackers**: If an attacker misses a transmission, they fail to capture the coefficients needed to evolve that block. When the system eventually wraps around, the attacker's original codebook will contain stale data for that block, causing decryption to fail. The more transmissions an attacker misses, the faster their ability to decrypt subsequent laps declines.
+- **Out-of-Sync Protection**: The system relies on synchronized block indices and rolling codes (stored in EEPROM). Each transmission includes an encrypted sync header to allow the receiver to automatically resync to the transmitter's current block.
 
 ### Using SD Key Cards
 1. Generate an initial key card image: `python3 generate_key_card.py --size 1`

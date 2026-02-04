@@ -80,12 +80,6 @@ void setup() {
 }
 
 void loop() {
-    if (currentBlock >= header.totalBlocks) {
-        Serial.println("Reached end of codebook!");
-        delay(10000);
-        return;
-    }
-
     if (!card.readBlock(currentBlock, keyBlock)) {
         Serial.println("Read failed!");
         delay(5000);
@@ -141,6 +135,10 @@ void loop() {
     expand_poly(newCoeffs, POLY_COEFFS_COUNT, keyBlock, 512);
     if (card.writeBlock(currentBlock, keyBlock)) {
         currentBlock++;
+        if (currentBlock >= header.totalBlocks) {
+            currentBlock = 1; // Wrap around to the first data block
+            Serial.println("Lap complete. Wrapping around to block 1...");
+        }
         EEPROM.put(EEPROM_ADDR_BLOCK, currentBlock);
 #if defined(ESP8266) || defined(ESP32)
         EEPROM.commit();

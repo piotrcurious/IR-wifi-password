@@ -73,7 +73,9 @@ void processDecryptedData() {
 
         expand_poly(newCoeffs, POLY_COEFFS_COUNT, keyBlock, 512);
         if (card.writeBlock(currentBlock, keyBlock)) {
-            EEPROM.put(EEPROM_ADDR_BLOCK, currentBlock + 1);
+            uint32_t nextBlock = currentBlock + 1;
+            if (nextBlock >= header.totalBlocks) nextBlock = 1;
+            EEPROM.put(EEPROM_ADDR_BLOCK, nextBlock);
             EEPROM.put(EEPROM_ADDR_ROLLING, lastRollingCode);
 #if defined(ESP8266) || defined(ESP32)
             EEPROM.commit();

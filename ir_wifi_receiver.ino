@@ -59,10 +59,13 @@ void processNibble(uint8_t encoded) {
             Serial.print("SSID Len: "); Serial.println(ssidLen);
         } else if (currentState == RECEIVE_PASS_LEN) {
             passLen = currentByte;
-            currentState = RECEIVE_DATA;
             Serial.print("Pass Len: "); Serial.println(passLen);
             if (ssidLen + passLen > 120) { // Safety check
                 resetReceiver();
+            } else if (ssidLen + passLen == 0) {
+                currentState = RECEIVE_CRC;
+            } else {
+                currentState = RECEIVE_DATA;
             }
         } else if (currentState == RECEIVE_DATA) {
             if (bufferIndex == (2 + ssidLen + passLen)) {
@@ -139,6 +142,7 @@ void loop() {
                     currentState = RECEIVE_SSID_LEN;
                     bufferIndex = 0;
                     nibbleIndex = 0;
+                    preambleSeen = 0;
                 }
             } else if (currentState != WAIT_PREAMBLE) {
                 // Should have bit 13 set

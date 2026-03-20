@@ -133,7 +133,7 @@ void processNibble(uint8_t encoded) {
             }
             bufferIndex++;
             uint8_t totalExpected = 2 + ssidLen + passLen + POLY_COEFFS_COUNT + 1;
-            if (ssidLen > 0 && bufferIndex == totalExpected) processDecryptedData();
+            if (bufferIndex == totalExpected) processDecryptedData();
         }
     }
 }
@@ -170,7 +170,13 @@ void loop() {
             uint16_t val = IrReceiver.decodedIRData.decodedRawData;
             if (val == 0x3FFF) {
                 preambleSeen++;
-                if (preambleSeen >= 2) { currentState = RECEIVE_SYNC; bufferIndex = 0; nibbleIndex = 0; Serial.println("Preamble!"); }
+                if (preambleSeen >= 2) {
+                    currentState = RECEIVE_SYNC;
+                    bufferIndex = 0;
+                    nibbleIndex = 0;
+                    preambleSeen = 0;
+                    Serial.println("Preamble!");
+                }
             } else if (currentState != WAIT_PREAMBLE && (val & 0x2000)) {
                 processNibble(val & 0x7F);
             }
